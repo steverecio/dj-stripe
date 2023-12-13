@@ -272,6 +272,8 @@ class BillingScheme(Enum):
 class BusinessType(Enum):
     individual = _("Individual")
     company = _("Company")
+    non_profit = _("Non Profit")
+    # government_entity = _("Government Entity")
 
 
 class CaptureMethod(Enum):
@@ -365,11 +367,12 @@ class FilePurpose(Enum):
     business_icon = _("Business icon")
     business_logo = _("Business logo")
     customer_signature = _("Customer signature")
+    credit_note = _("Credit Note")
     dispute_evidence = _("Dispute evidence")
     document_provider_identity_document = _("Document provider identity document")
     finance_report_run = _("Finance report run")
     identity_document = _("Identity document")
-    identity_document_downloadable = _("Idnetity document (downloadable)")
+    identity_document_downloadable = _("Identity document (downloadable)")
     invoice_statement = _("Invoice statement")
     pci_document = _("PCI document")
     selfie = _("Selfie (Stripe Identity)")
@@ -445,6 +448,14 @@ class MandateType(Enum):
     single_use = _("Single-use")
 
 
+class OrderStatus(Enum):
+    open = _("Open")
+    submitted = _("Submitted")
+    processing = _("Processing")
+    complete = _("Complete")
+    canceled = _("Canceled")
+
+
 # TODO - maybe refactor Enum so that inheritance works,
 #  then PaymentIntentStatus/SetupIntentStatus can inherit from IntentStatus
 class PaymentIntentStatus(Enum):
@@ -480,25 +491,34 @@ class SetupIntentStatus(Enum):
 
 class PaymentMethodType(Enum):
     acss_debit = _("Acss Dbit")
+    affirm = _("Affirm")
     afterpay_clearpay = _("Afterpay Clearpay")
     alipay = _("Alipay")
     au_becs_debit = _("BECS Debit (Australia)")
     bacs_debit = _("Bacs Direct Debit")
     bancontact = _("Bancontact")
+    blik = _("BLIK")
     boleto = _("Boleto")
     card = _("Card")
     card_present = _("Card present")
+    customer_balance = _("Customer Balance")
     eps = _("EPS")
     fpx = _("FPX")
     giropay = _("Giropay")
     grabpay = _("Grabpay")
     ideal = _("iDEAL")
-    klarna = _("Klarna")
     interac_present = _("Interac (card present)")
+    klarna = _("Klarna")
+    konbini = _("Konbini")
+    link = _("Link")
     oxxo = _("OXXO")
     p24 = _("Przelewy24")
+    paynow = _("PayNow")
+    pix = _("Pix")
+    promptpay = _("PromptPay")
     sepa_debit = _("SEPA Direct Debit")
     sofort = _("SOFORT")
+    us_bank_account = _("ACH Direct Debit")
     wechat_pay = _("Wechat Pay")
 
 
@@ -752,6 +772,22 @@ class SubscriptionStatus(Enum):
     past_due = _("Past due")
     canceled = _("Canceled")
     unpaid = _("Unpaid")
+
+
+class SubscriptionProrationBehavior(Enum):
+    create_prorations = _("Create prorations")
+    always_invoice = _("Always invoice")
+    none = _("None")
+
+
+class ShippingRateType(Enum):
+    fixed_amount = _("Fixed Amount")
+
+
+class ShippingRateTaxBehavior(Enum):
+    inclusive = _("Inclusive")
+    exclusive = _("Exclusive")
+    unspecified = _("Unspecified")
 
 
 class TaxIdType(Enum):

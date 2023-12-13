@@ -38,7 +38,9 @@ The full documentation is available [on Read the Docs](https://dj-stripe.github.
 -   MySQL engine: MariaDB >=10.2 or MySQL >=5.7
 -   SQLite: Not recommended in production. Version >=3.26 required.
 
---8<-- "docs/installation.md"
+## Installation
+
+See [installation](docs/installation.md) instructions.
 
 ## Changelog
 
@@ -46,7 +48,9 @@ The full documentation is available [on Read the Docs](https://dj-stripe.github.
 
 ## Funding and Support
 
-[![Stripe Logo](./logos/stripe_blurple.svg)](https://stripe.com)
+<a href="https://stripe.com">
+  <img alt="Stripe Logo" src="./logos/stripe_blurple.svg" width="250px" />
+</a>
 
 You can now become a sponsor to dj-stripe with [GitHub Sponsors](https://github.com/sponsors/dj-stripe).
 
@@ -63,13 +67,9 @@ an open ledger on how donations are spent.
 
 ## Our Gold sponsors
 
-<style>
-img[alt="Stripe Logo"] {
-    max-width: 250px;
-}
-</style>
-
-[![Stripe Logo](./logos/stripe_blurple.svg)](https://stripe.com)
+<a href="https://stripe.com">
+  <img alt="Stripe Logo" src="./logos/stripe_blurple.svg" width="250px" />
+</a>
 
 ## Similar libraries
 

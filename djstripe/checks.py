@@ -1,8 +1,14 @@
 """
 dj-stripe System Checks
 """
+import re
+
 from django.core import checks
-from django.utils.dateparse import date_re
+from django.db.utils import DatabaseError
+
+STRIPE_API_VERSION_PATTERN = re.compile(
+    r"(?P<year>\d{4})-(?P<month>\d{1,2})-(?P<day>\d{1,2})(; [\w=]*)?$"
+)
 
 
 @checks.register("djstripe")
@@ -34,13 +40,15 @@ def validate_stripe_api_version(version):
     """
     Check the API version is formatted correctly for Stripe.
 
-    The expected format is an iso8601 date: `YYYY-MM-DD`
+    The expected format is `YYYY-MM-DD` (an iso8601 date) or
+    for access to alpha or beta releases the expected format is: `YYYY-MM-DD; modelname_version=version_number`.
+    Ex "2020-08-27; orders_beta=v3"
 
     :param version: The version to set for the Stripe API.
     :type version: ``str``
     :returns bool: Whether the version is formatted correctly.
     """
-    return date_re.match(version)
+    return re.match(STRIPE_API_VERSION_PATTERN, version)
 
 
 @checks.register("djstripe")
@@ -98,19 +106,44 @@ def check_webhook_secret(app_configs=None, **kwargs):
     """
     Check that DJSTRIPE_WEBHOOK_SECRET looks correct
     """
+
+    def check_webhook_endpoint_secret(secret, messages, endpoint=None):
+        if secret and not secret.startswith("whsec_"):
+            if endpoint:
+                extra_msg = (
+                    f"The secret for Webhook Endpoint: {endpoint} does not look valid"
+                )
+            else:
+                extra_msg = "DJSTRIPE_WEBHOOK_SECRET does not look valid"
+
+            messages.append(
+                checks.Warning(
+                    extra_msg,
+                    hint="It should start with whsec_...",
+                    id="djstripe.W003",
+                )
+            )
+        return messages
+
+    from .models import WebhookEndpoint
     from .settings import djstripe_settings
 
     messages = []
+    try:
+        webhooks = list(WebhookEndpoint.objects.all())
+    except DatabaseError:
+        # skip the db-based check (db most likely not migrated yet)
+        webhooks = []
 
-    secret = djstripe_settings.WEBHOOK_SECRET
-    if secret and not secret.startswith("whsec_"):
-        messages.append(
-            checks.Warning(
-                "DJSTRIPE_WEBHOOK_SECRET does not look valid",
-                hint="It should start with whsec_...",
-                id="djstripe.W003",
-            )
-        )
+    if webhooks:
+        for endpoint in webhooks:
+            secret = endpoint.secret
+            # check secret
+            check_webhook_endpoint_secret(secret, messages, endpoint=endpoint)
+    else:
+        secret = djstripe_settings.WEBHOOK_SECRET
+        # check secret
+        check_webhook_endpoint_secret(secret, messages)
 
     return messages
 
@@ -120,6 +153,26 @@ def check_webhook_validation(app_configs=None, **kwargs):
     """
     Check that DJSTRIPE_WEBHOOK_VALIDATION is valid
     """
+
+    def check_webhook_endpoint_validation(secret, messages, endpoint=None):
+        if not secret:
+            if endpoint:
+                extra_msg = f"but Webhook Endpoint: {endpoint} has no secret set"
+                secret_attr = "secret"
+            else:
+                extra_msg = "but DJSTRIPE_WEBHOOK_SECRET is not set"
+                secret_attr = "DJSTRIPE_WEBHOOK_SECRET"
+
+            messages.append(
+                checks.Critical(
+                    f"DJSTRIPE_WEBHOOK_VALIDATION='verify_signature' {extra_msg}",
+                    hint=f"Set {secret_attr} or set DJSTRIPE_WEBHOOK_VALIDATION='retrieve_event'",
+                    id="djstripe.C006",
+                )
+            )
+        return messages
+
+    from .models import WebhookEndpoint
     from .settings import djstripe_settings
 
     messages = []
@@ -138,16 +191,23 @@ def check_webhook_validation(app_configs=None, **kwargs):
             )
         )
     elif djstripe_settings.WEBHOOK_VALIDATION == "verify_signature":
-        if not djstripe_settings.WEBHOOK_SECRET:
-            messages.append(
-                checks.Critical(
-                    "DJSTRIPE_WEBHOOK_VALIDATION='verify_signature' "
-                    "but DJSTRIPE_WEBHOOK_SECRET is not set",
-                    hint="Set DJSTRIPE_WEBHOOK_SECRET or set "
-                    "DJSTRIPE_WEBHOOK_VALIDATION='retrieve_event'",
-                    id="djstripe.C006",
-                )
-            )
+
+        try:
+            webhooks = list(WebhookEndpoint.objects.all())
+        except DatabaseError:
+            # Skip the db-based check (database most likely not migrated yet)
+            webhooks = []
+
+        if webhooks:
+            for endpoint in webhooks:
+                secret = endpoint.secret
+                # check secret
+                check_webhook_endpoint_validation(secret, messages, endpoint=endpoint)
+        else:
+            secret = djstripe_settings.WEBHOOK_SECRET
+            # check secret
+            check_webhook_endpoint_validation(secret, messages)
+
     elif djstripe_settings.WEBHOOK_VALIDATION not in validation_options:
         messages.append(
             checks.Critical(
@@ -156,6 +216,34 @@ def check_webhook_validation(app_configs=None, **kwargs):
                     ", ".join(validation_options)
                 ),
                 id="djstripe.C007",
+            )
+        )
+
+    return messages
+
+
+@checks.register("djstripe")
+def check_webhook_endpoint_has_secret(app_configs=None, **kwargs):
+    """Checks if all Webhook Endpoints have not empty secrets."""
+    from djstripe.models import WebhookEndpoint
+
+    messages = []
+
+    try:
+        qs = list(WebhookEndpoint.objects.filter(secret="").all())
+    except DatabaseError:
+        # Skip the check - Database most likely not migrated yet
+        return []
+
+    for webhook in qs:
+        messages.append(
+            checks.Warning(
+                f"The secret of Webhook Endpoint: {webhook} is not populated in the db. Events sent to it will not work properly.",
+                hint=(
+                    "This can happen if it was deleted and resynced as Stripe sends the webhook secret ONLY on the creation call."
+                    f" Please use the django shell and update the secret with the value from {webhook.get_stripe_dashboard_url()}"
+                ),
+                id="djstripe.W005",
             )
         )
 

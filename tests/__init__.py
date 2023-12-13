@@ -219,7 +219,7 @@ class ExternalAccounts(object):
             if fake_external_account["id"] == source:
                 return fake_external_account
 
-    def retrieve(self, id, expand=None):  # noqa
+    def retrieve(self, id, expand=None):
         for fake_external_account in self.external_account_fakes:
             if fake_external_account["id"] == id:
                 return fake_external_account
@@ -510,6 +510,85 @@ FAKE_CARD_AS_PAYMENT_METHOD = PaymentMethodDict(
     load_fixture("payment_method_card_fakefakefakefakefake0001.json")
 )
 
+
+FAKE_ORDER_WITH_CUSTOMER_WITH_PAYMENT_INTENT = load_fixture(
+    "order_order_fakefakefakefake0001.json"
+)
+
+
+FAKE_ORDER_WITHOUT_CUSTOMER_WITH_PAYMENT_INTENT = deepcopy(
+    FAKE_ORDER_WITH_CUSTOMER_WITH_PAYMENT_INTENT
+)
+FAKE_ORDER_WITHOUT_CUSTOMER_WITH_PAYMENT_INTENT["customer"] = None
+
+
+FAKE_ORDER_WITH_CUSTOMER_WITHOUT_PAYMENT_INTENT = deepcopy(
+    FAKE_ORDER_WITH_CUSTOMER_WITH_PAYMENT_INTENT
+)
+FAKE_ORDER_WITH_CUSTOMER_WITHOUT_PAYMENT_INTENT["payment_intent"] = None
+FAKE_ORDER_WITH_CUSTOMER_WITHOUT_PAYMENT_INTENT["payment"]["payment_intent"] = None
+
+
+FAKE_ORDER_WITHOUT_CUSTOMER_WITHOUT_PAYMENT_INTENT = deepcopy(
+    FAKE_ORDER_WITH_CUSTOMER_WITH_PAYMENT_INTENT
+)
+FAKE_ORDER_WITHOUT_CUSTOMER_WITHOUT_PAYMENT_INTENT["customer"] = None
+FAKE_ORDER_WITHOUT_CUSTOMER_WITHOUT_PAYMENT_INTENT["payment_intent"] = None
+FAKE_ORDER_WITHOUT_CUSTOMER_WITHOUT_PAYMENT_INTENT["payment"]["payment_intent"] = None
+
+
+# Created Orders have their status="open"
+FAKE_EVENT_ORDER_CREATED = {
+    "id": "evt_16igNU2eZvKYlo2CYyMkYvet",
+    "object": "event",
+    "api_version": "2016-03-07",
+    "created": 1441696732,
+    "data": {"object": deepcopy(FAKE_ORDER_WITH_CUSTOMER_WITHOUT_PAYMENT_INTENT)},
+    "livemode": False,
+    "pending_webhooks": 0,
+    "request": "req_6wZW9MskhYU15Y",
+    "type": "order.created",
+}
+FAKE_EVENT_ORDER_CREATED["data"]["object"]["status"] = "open"
+
+
+FAKE_EVENT_ORDER_UPDATED = {
+    "id": "evt_16igNU2eZvKYlo2CYyMkYvet",
+    "object": "event",
+    "api_version": "2016-03-07",
+    "created": 1441696732,
+    "data": {"object": deepcopy(FAKE_ORDER_WITH_CUSTOMER_WITH_PAYMENT_INTENT)},
+    "livemode": False,
+    "pending_webhooks": 0,
+    "request": "req_6wZW9MskhYU15Y",
+    "type": "order.created",
+}
+
+FAKE_EVENT_ORDER_UPDATED["data"]["object"]["status"] = "open"
+FAKE_EVENT_ORDER_UPDATED["type"] = "order.updated"
+FAKE_EVENT_ORDER_UPDATED["data"]["object"]["billing_details"][
+    "email"
+] = "arnav13@gmail.com"
+
+
+FAKE_EVENT_ORDER_SUBMITTED = deepcopy(FAKE_EVENT_ORDER_UPDATED)
+FAKE_EVENT_ORDER_SUBMITTED["type"] = "order.submitted"
+FAKE_EVENT_ORDER_SUBMITTED["data"]["object"]["status"] = "submitted"
+
+
+FAKE_EVENT_ORDER_PROCESSING = deepcopy(FAKE_EVENT_ORDER_UPDATED)
+FAKE_EVENT_ORDER_PROCESSING["type"] = "order.processing"
+FAKE_EVENT_ORDER_PROCESSING["data"]["object"]["status"] = "processing"
+
+
+FAKE_EVENT_ORDER_CANCELLED = deepcopy(FAKE_EVENT_ORDER_UPDATED)
+FAKE_EVENT_ORDER_CANCELLED["type"] = "order.canceled"
+FAKE_EVENT_ORDER_CANCELLED["data"]["object"]["status"] = "canceled"
+
+
+FAKE_EVENT_ORDER_COMPLETED = deepcopy(FAKE_EVENT_ORDER_UPDATED)
+FAKE_EVENT_ORDER_COMPLETED["type"] = "order.complete"
+FAKE_EVENT_ORDER_COMPLETED["data"]["object"]["status"] = "complete"
 
 # TODO - add to regenerate_test_fixtures and replace this with a JSON fixture
 FAKE_SETUP_INTENT_I = {
@@ -1086,6 +1165,7 @@ FAKE_SUBSCRIPTION_METERED = SubscriptionDict(
                 }
             ]
         },
+        "pause_collection": None,
         "plan": deepcopy(FAKE_PLAN_METERED),
         "quantity": 1,
         "start": 1439229181,
@@ -1209,6 +1289,12 @@ FAKE_SUBSCRIPTION_SCHEDULE = {
 }
 
 
+FAKE_SHIPPING_RATE = load_fixture("shipping_rate_shr_fakefakefakefakefake0001.json")
+FAKE_SHIPPING_RATE_WITH_TAX_CODE = load_fixture(
+    "shipping_rate_shr_fakefakefakefakefake0002.json"
+)
+
+
 class Sources(object):
     def __init__(self, card_fakes):
         self.card_fakes = card_fakes
@@ -1218,7 +1304,7 @@ class Sources(object):
             if fake_card["id"] == source:
                 return fake_card
 
-    def retrieve(self, id, expand=None):  # noqa
+    def retrieve(self, id, expand=None):
         for fake_card in self.card_fakes:
             if fake_card["id"] == id:
                 return fake_card

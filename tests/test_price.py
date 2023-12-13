@@ -133,7 +133,7 @@ class PriceTest(AssertStripeFksMixin, TestCase):
         price_retrieve_mock.assert_called_once_with(
             id=self.price_data["id"],
             api_key=djstripe_settings.STRIPE_SECRET_KEY,
-            expand=["tiers"],
+            expand=["product", "tiers"],
             stripe_account=self.price.djstripe_owner_account.id,
         )
         price = Price.sync_from_stripe_data(stripe_price)
@@ -204,10 +204,9 @@ class TestStrPrice:
 
         else:
             price = Price.sync_from_stripe_data(fake_price_data)
-            subscriptions = Subscription.objects.filter(plan__id=price.id).count()
             assert (
-                f"{price.human_readable_price} for {FAKE_PRODUCT['name']} ({subscriptions} subscriptions)"
-            ) == str(price)
+                str(price) == f"{price.human_readable_price} for {FAKE_PRODUCT['name']}"
+            )
 
 
 class TestHumanReadablePrice:

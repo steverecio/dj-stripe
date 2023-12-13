@@ -93,7 +93,7 @@ class Coupon(StripeModel):
     Coupons may be applied to invoices or orders.
     Coupons do not work with conventional one-off charges.
 
-    Stripe documentation: https://stripe.com/docs/api/coupons
+    Stripe documentation: https://stripe.com/docs/api/coupons?lang=python
     """
 
     stripe_class = stripe.Coupon
@@ -119,6 +119,7 @@ class Coupon(StripeModel):
             "Describes how long a customer who applies this coupon "
             "will get the discount."
         ),
+        default=enums.CouponDuration.once,
     )
     duration_in_months = models.PositiveIntegerField(
         null=True,
@@ -164,11 +165,8 @@ class Coupon(StripeModel):
     )
     # valid = models.BooleanField(editable=False)
 
-    class Meta:
+    class Meta(StripeModel.Meta):
         unique_together = ("id", "livemode")
-
-    stripe_class = stripe.Coupon
-    stripe_dashboard_item_name = "coupons"
 
     def __str__(self):
         if self.name:
@@ -178,12 +176,12 @@ class Coupon(StripeModel):
     @property
     def human_readable_amount(self):
         if self.percent_off:
-            amount = "{percent_off}%".format(percent_off=self.percent_off)
+            amount = f"{self.percent_off}%"
         elif self.currency:
             amount = get_friendly_currency_amount(self.amount_off or 0, self.currency)
         else:
             amount = "(invalid amount)"
-        return "{amount} off".format(amount=amount)
+        return f"{amount} off"
 
     @property
     def human_readable(self):
@@ -195,9 +193,7 @@ class Coupon(StripeModel):
             duration = duration.format(duration_in_months=self.duration_in_months)
         else:
             duration = self.duration
-        return "{amount} {duration}".format(
-            amount=self.human_readable_amount, duration=duration
-        )
+        return f"{self.human_readable_amount} {duration}"
 
 
 class BaseInvoice(StripeModel):
@@ -550,14 +546,14 @@ class BaseInvoice(StripeModel):
         ),
     )
 
-    class Meta:
+    class Meta(StripeModel.Meta):
         abstract = True
         ordering = ["-created"]
 
     def __str__(self):
-        return "Invoice #{number}".format(
-            number=self.number or self.receipt_number or self.id
-        )
+        invoice_number = self.number or self.receipt_number or self.id
+        amount = get_friendly_currency_amount(self.amount_paid or 0, self.currency)
+        return f"Invoice #{invoice_number} for {amount} ({self.status})"
 
     @classmethod
     def upcoming(
@@ -1045,7 +1041,7 @@ class InvoiceItem(StripeModel):
 
     @classmethod
     def is_valid_object(cls, data):
-        return "object" in data and data["object"] in ("invoiceitem", "line_item")
+        return data and data.get("object") in ("invoiceitem", "line_item")
 
     def get_stripe_dashboard_url(self):
         return self.invoice.get_stripe_dashboard_url()
@@ -1066,14 +1062,14 @@ class Plan(StripeModel):
     A subscription plan contains the pricing information for different
     products and feature levels on your site.
 
-    Stripe documentation: https://stripe.com/docs/api/plans
+    Stripe documentation: https://stripe.com/docs/api/plans?lang=python
 
     NOTE: The Stripe Plans API has been deprecated in favor of the Prices API.
     You may want to upgrade to use the Price model instead of the Plan model.
     """
 
     stripe_class = stripe.Plan
-    expand_fields = ["tiers"]
+    expand_fields = ["product", "tiers"]
     stripe_dashboard_item_name = "plans"
 
     active = models.BooleanField(
@@ -1223,17 +1219,16 @@ class Plan(StripeModel):
         return plan
 
     def __str__(self):
-        subscriptions_cnt = self.subscriptions.count()
         if self.product and self.product.name:
-            return f"{self.human_readable_price} for {self.product.name} ({subscriptions_cnt} subscriptions)"
-        return f"{self.human_readable_price} ({subscriptions_cnt} subscriptions)"
+            return f"{self.human_readable_price} for {self.product.name}"
+        return self.human_readable_price
 
     @property
     def amount_in_cents(self):
         return int(self.amount * 100)
 
     @property
-    def human_readable_price(self):
+    def human_readable_price(self) -> str:
         if self.billing_scheme == "per_unit":
             unit_amount = self.amount
             amount = get_friendly_currency_amount(unit_amount, self.currency)
@@ -1242,7 +1237,7 @@ class Plan(StripeModel):
             tier_1 = self.tiers[0]
             flat_amount_tier_1 = tier_1["flat_amount"]
             formatted_unit_amount_tier_1 = get_friendly_currency_amount(
-                tier_1["unit_amount"] / 100, self.currency
+                (tier_1["unit_amount"] or 0) / 100, self.currency
             )
             amount = f"Starts at {formatted_unit_amount_tier_1} per unit"
 
@@ -1276,7 +1271,7 @@ class Plan(StripeModel):
             format_args["interval"] = interval
             format_args["interval_count"] = interval_count
 
-        return format_lazy(template, **format_args)
+        return str(format_lazy(template, **format_args))
 
 
 class Subscription(StripeModel):
@@ -1412,7 +1407,11 @@ class Subscription(StripeModel):
         "that does not have tax_rates set. Invoices created will have their "
         "default_tax_rates populated from the subscription.",
     )
-    discount = JSONField(null=True, blank=True)
+    discount = JSONField(
+        null=True,
+        blank=True,
+        help_text="Describes the current discount applied to this subscription, if there is one. When billing, a discount applied to a subscription overrides a discount applied on a customer-wide basis.",
+    )
     ended_at = StripeDateTimeField(
         null=True,
         blank=True,
@@ -1434,6 +1433,11 @@ class Subscription(StripeModel):
         help_text="Specifies the approximate timestamp on which any pending "
         "invoice items will be billed according to the schedule provided at "
         "pending_invoice_item_interval.",
+    )
+    pause_collection = JSONField(
+        null=True,
+        blank=True,
+        help_text="If specified, payment collection for this subscription will be paused.",
     )
     pending_invoice_item_interval = JSONField(
         null=True,
@@ -1467,6 +1471,17 @@ class Subscription(StripeModel):
         related_name="subscriptions",
         help_text="The plan associated with this subscription. This value will be "
         "`null` for multi-plan subscriptions",
+    )
+    proration_behavior = StripeEnumField(
+        enum=enums.SubscriptionProrationBehavior,
+        help_text="Determines how to handle prorations when the billing cycle changes (e.g., when switching plans, resetting billing_cycle_anchor=now, or starting a trial), or if an item’s quantity changes",
+        default=enums.SubscriptionProrationBehavior.create_prorations,
+        blank=True,
+    )
+    proration_date = StripeDateTimeField(
+        null=True,
+        blank=True,
+        help_text="If set, the proration will be calculated as though the subscription was updated at the given time. This can be used to apply exactly the same proration that was previewed with upcoming invoice endpoint. It can also be used to implement custom proration logic, such as prorating by day instead of by second, by providing the time that you wish to use for proration calculations",
     )
     quantity = models.IntegerField(
         null=True,
@@ -1510,10 +1525,27 @@ class Subscription(StripeModel):
         products_lst = [
             subscription.plan.product.name
             for subscription in subscriptions_lst
-            if subscription and subscription.plan
+            if subscription and subscription.plan and subscription.plan.product
         ]
 
         return f"{self.customer} on {' and '.join(products_lst)}"
+
+    @classmethod
+    def api_list(cls, api_key=djstripe_settings.STRIPE_SECRET_KEY, **kwargs):
+        """
+        Call the stripe API's list operation for this model.
+        :param api_key: The api key to use for this request. \
+            Defaults to djstripe_settings.STRIPE_SECRET_KEY.
+        :type api_key: string
+        See Stripe documentation for accepted kwargs for each object.
+        :returns: an iterator over all items in the query
+        """
+        if not kwargs.get("status"):
+            # special case: https://stripe.com/docs/api/subscriptions/list#list_subscriptions-status
+            # See Issue: https://github.com/dj-stripe/dj-stripe/issues/1763
+            kwargs["status"] = "all"
+
+        return super().api_list(api_key=api_key, **kwargs)
 
     def update(
         self,
@@ -1551,8 +1583,18 @@ class Subscription(StripeModel):
                     "The `prorate` parameter to Subscription.update() is deprecated "
                     "by Stripe. Use `proration_behavior` instead.\n"
                     "Read more: "
-                    "https://stripe.com/docs/billing/subscriptions/prorations"
+                    "https://stripe.com/docs/billing/subscriptions/prorations",
+                    DeprecationWarning,
                 )
+            elif kwargs.get("subscription_prorate") is not None:
+                warnings.warn(
+                    "The `subscription_prorate` parameter to Subscription.update() is deprecated "
+                    "by Stripe. Use `proration_behavior` instead.\n"
+                    "Read more: "
+                    "https://stripe.com/docs/billing/subscriptions/prorations",
+                    DeprecationWarning,
+                )
+
             else:
                 prorate = djstripe_settings.PRORATION_POLICY
                 if prorate is not None:
@@ -1753,7 +1795,7 @@ class SubscriptionItem(StripeModel):
     Subscription items allow you to create customer subscriptions
     with more than one plan, making it easy to represent complex billing relationships.
 
-    Stripe documentation: https://stripe.com/docs/api#subscription_items
+    Stripe documentation: https://stripe.com/docs/api?lang=python#subscription_items
     """
 
     stripe_class = stripe.SubscriptionItem
@@ -1777,6 +1819,17 @@ class SubscriptionItem(StripeModel):
         on_delete=models.CASCADE,
         related_name="subscription_items",
         help_text="The price the customer is subscribed to.",
+    )
+    proration_behavior = StripeEnumField(
+        enum=enums.SubscriptionProrationBehavior,
+        help_text="Determines how to handle prorations when the billing cycle changes (e.g., when switching plans, resetting billing_cycle_anchor=now, or starting a trial), or if an item’s quantity changes",
+        default=enums.SubscriptionProrationBehavior.create_prorations,
+        blank=True,
+    )
+    proration_date = StripeDateTimeField(
+        null=True,
+        blank=True,
+        help_text="If set, the proration will be calculated as though the subscription was updated at the given time. This can be used to apply exactly the same proration that was previewed with upcoming invoice endpoint. It can also be used to implement custom proration logic, such as prorating by day instead of by second, by providing the time that you wish to use for proration calculations",
     )
     quantity = models.PositiveIntegerField(
         null=True,
@@ -1826,7 +1879,7 @@ class SubscriptionSchedule(StripeModel):
     Subscription schedules allow you to create and manage the lifecycle
     of a subscription by predefining expected changes.
 
-    Stripe documentation: https://stripe.com/docs/api/subscription_schedules
+    Stripe documentation: https://stripe.com/docs/api/subscription_schedules?lang=python
     """
 
     stripe_class = stripe.SubscriptionSchedule
@@ -1967,6 +2020,71 @@ class SubscriptionSchedule(StripeModel):
         return SubscriptionSchedule.sync_from_stripe_data(stripe_subscription_schedule)
 
 
+class ShippingRate(StripeModel):
+    """
+    Shipping rates describe the price of shipping presented
+    to your customers and can be applied to Checkout Sessions
+    to collect shipping costs.
+
+    Stripe documentation: https://stripe.com/docs/api/shipping_rates
+    """
+
+    stripe_class = stripe.ShippingRate
+    stripe_dashboard_item_name = "shipping-rates"
+    description = None
+
+    active = models.BooleanField(
+        default=True,
+        help_text="Whether the shipping rate can be used for new purchases. Defaults to true",
+    )
+    display_name = models.CharField(
+        max_length=50,
+        default="",
+        blank=True,
+        help_text="The name of the shipping rate, meant to be displayable to the customer. This will appear on CheckoutSessions.",
+    )
+    fixed_amount = JSONField(
+        help_text="Describes a fixed amount to charge for shipping. Must be present if type is fixed_amount",
+    )
+    type = StripeEnumField(
+        enum=enums.ShippingRateType,
+        default=enums.ShippingRateType.fixed_amount,
+        help_text=_(
+            "The type of calculation to use on the shipping rate. Can only be fixed_amount for now."
+        ),
+    )
+    delivery_estimate = JSONField(
+        null=True,
+        blank=True,
+        help_text="The estimated range for how long shipping will take, meant to be displayable to the customer. This will appear on CheckoutSessions.",
+    )
+    tax_behavior = StripeEnumField(
+        enum=enums.ShippingRateTaxBehavior,
+        help_text=_(
+            "Specifies whether the rate is considered inclusive of taxes or exclusive of taxes."
+        ),
+    )
+    tax_code = StripeForeignKey(
+        "TaxCode",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        help_text="The shipping tax code",
+    )
+
+    class Meta(StripeModel.Meta):
+        verbose_name = "Shipping Rate"
+
+    def __str__(self):
+        amount = get_friendly_currency_amount(
+            self.fixed_amount.get("amount") / 100, self.fixed_amount.get("currency")
+        )
+        if self.active:
+            return f"{self.display_name} - {amount} (Active)"
+        else:
+            return f"{self.display_name} - {amount} (Archived)"
+
+
 class TaxCode(StripeModel):
     """
     Tax codes classify goods and services for tax purposes.
@@ -1982,11 +2100,16 @@ class TaxCode(StripeModel):
         help_text="A short name for the tax code.",
     )
 
-    class Meta:
+    class Meta(StripeModel.Meta):
         verbose_name = "Tax Code"
 
     def __str__(self):
         return f"{self.name}: {self.id}"
+
+    @classmethod
+    def _find_owner_account(cls, data, api_key=djstripe_settings.STRIPE_SECRET_KEY):
+        # Tax Codes do not belong to any Stripe Account
+        pass
 
 
 class TaxId(StripeModel):
@@ -1995,7 +2118,7 @@ class TaxId(StripeModel):
     A customer's tax IDs are displayed on invoices and
     credit notes issued for the customer.
 
-    Stripe documentation: https://stripe.com/docs/api/customer_tax_ids
+    Stripe documentation: https://stripe.com/docs/api/customer_tax_ids?lang=python
     """
 
     stripe_class = stripe.TaxId
@@ -2018,9 +2141,8 @@ class TaxId(StripeModel):
     def __str__(self):
         return f"{enums.TaxIdType.humanize(self.type)} {self.value} ({self.verification.get('status')})"
 
-    class Meta:
+    class Meta(StripeModel.Meta):
         verbose_name = "Tax ID"
-        verbose_name_plural = "Tax IDs"
 
     @classmethod
     def _api_create(cls, api_key=djstripe_settings.STRIPE_SECRET_KEY, **kwargs):
@@ -2086,7 +2208,7 @@ class TaxRate(StripeModel):
     """
     Tax rates can be applied to invoices and subscriptions to collect tax.
 
-    Stripe documentation: https://stripe.com/docs/api/tax_rates
+    Stripe documentation: https://stripe.com/docs/api/tax_rates?lang=python
     """
 
     stripe_class = stripe.TaxRate
@@ -2141,9 +2263,8 @@ class TaxRate(StripeModel):
     def __str__(self):
         return f"{self.display_name} at {self.percentage}%"
 
-    class Meta:
-        verbose_name = "Tax Rates"
-        verbose_name_plural = "Tax Rates"
+    class Meta(StripeModel.Meta):
+        verbose_name = "Tax Rate"
 
 
 class UsageRecord(StripeModel):
@@ -2151,7 +2272,7 @@ class UsageRecord(StripeModel):
     Usage records allow you to continually report usage and metrics to
     Stripe for metered billing of plans.
 
-    Stripe documentation: https://stripe.com/docs/api#usage_records
+    Stripe documentation: https://stripe.com/docs/api?lang=python#usage_records
     """
 
     description = None
@@ -2230,7 +2351,7 @@ class UsageRecordSummary(StripeModel):
     Since new usage records can still be added, the returned summary information for the subscription item's ID
     should be seen as unstable until the subscription billing period ends.
 
-    Stripe documentation: https://stripe.com/docs/api/usage_records/subscription_item_summary_list
+    Stripe documentation: https://stripe.com/docs/api/usage_records/subscription_item_summary_list?lang=python
     """
 
     stripe_class = stripe.UsageRecordSummary

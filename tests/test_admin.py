@@ -16,9 +16,9 @@ from django.urls import reverse
 from jsonfield import JSONField
 from pytest_django.asserts import assertQuerysetEqual
 
-from djstripe import admin as djstripe_admin
 from djstripe import models, utils
-from djstripe.forms import CustomActionForm
+from djstripe.admin import admin as djstripe_admin
+from djstripe.admin.forms import CustomActionForm
 from djstripe.models.account import Account
 from tests import (
     FAKE_BALANCE_TRANSACTION,
@@ -33,7 +33,7 @@ from tests import (
     FAKE_SUBSCRIPTION_SCHEDULE,
 )
 
-from .fields.models import TestCustomActionModel
+from .fields.models import CustomActionModel
 
 pytestmark = pytest.mark.django_db
 
@@ -476,6 +476,9 @@ class TestAdminRegisteredModelsChildrenOfStripeModel(TestCase):
                         assert "_resync_instances" in actions
                         assert "_sync_all_instances" in actions
                         assert "_cancel" in actions
+                    elif model.__name__ in ("Mandate", "UsageRecord"):
+                        assert "_resync_instances" in actions
+                        assert "_sync_all_instances" not in actions
                     else:
                         assert "_resync_instances" in actions
                         assert "_sync_all_instances" in actions
@@ -950,7 +953,7 @@ class TestCustomActionMixin:
 
         monkeypatch.setattr(utils, "get_model", mock_get_model)
 
-        model = TestCustomActionModel
+        model = CustomActionModel
 
         # create instance to be used in the Django Admin Action
         instance = model.objects.create(id="test")
@@ -969,8 +972,8 @@ class TestCustomActionMixin:
 
         assert context.get("queryset") == queryset
         assert context.get("action_name") == action_name
-        assert context.get("model_name") == "testcustomactionmodel"
-        assert context.get("changelist_url") == "/admin/fields/testcustomactionmodel/"
+        assert context.get("model_name") == "customactionmodel"
+        assert context.get("changelist_url") == "/admin/fields/customactionmodel/"
         assert context.get("ACTION_CHECKBOX_NAME") == helpers.ACTION_CHECKBOX_NAME
 
         if action_name == "_sync_all_instances":
@@ -984,7 +987,7 @@ class TestCustomActionMixin:
             ).choices == [("_sync_all_instances", "_sync_all_instances")]
         else:
             assert context.get("info") == [
-                f'Test custom action model: <a href="/admin/fields/testcustomactionmodel/{instance.pk}/change/">&lt;id=test&gt;</a>'
+                f'Custom action model: <a href="/admin/fields/customactionmodel/{instance.pk}/change/">&lt;id=test&gt;</a>'
             ]
 
             assertQuerysetEqual(
@@ -1063,7 +1066,7 @@ class TestCustomActionMixin:
     def test__resync_instances(
         self, djstripe_owner_account_exists, admin_client, monkeypatch
     ):
-        model = TestCustomActionModel
+        model = CustomActionModel
         model_admin = site._registry.get(model)
 
         # monkeypatch utils.get_model
@@ -1074,7 +1077,7 @@ class TestCustomActionMixin:
         def mock_get_admin_action_context(*args, **kwargs):
             return {
                 "action_name": "_resync_instances",
-                "model_name": "testcustomactionmodel",
+                "model_name": "customactionmodel",
             }
 
         monkeypatch.setattr(
@@ -1112,9 +1115,13 @@ class TestCustomActionMixin:
         all_models_lst = app_config.get_models()
 
         for model in all_models_lst:
-            if model in site._registry.keys() and (
-                model.__name__ == "WebhookEndpoint"
-                or model.__name__ not in self.ignore_models
+            if (
+                model in site._registry.keys()
+                and model.__name__ not in ("Mandate", "UsageRecord")
+                and (
+                    model.__name__ == "WebhookEndpoint"
+                    or model.__name__ not in self.ignore_models
+                )
             ):
 
                 # get the standard changelist_view url

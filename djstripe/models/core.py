@@ -58,7 +58,7 @@ class BalanceTransaction(StripeModel):
     """
     A single transaction that updates the Stripe balance.
 
-    Stripe documentation: https://stripe.com/docs/api#balance_transaction_object
+    Stripe documentation: https://stripe.com/docs/api?lang=python#balance_transaction_object
     """
 
     stripe_class = stripe.BalanceTransaction
@@ -92,7 +92,9 @@ class BalanceTransaction(StripeModel):
     type = StripeEnumField(enum=enums.BalanceTransactionType)
 
     def __str__(self):
-        return f"{self.human_readable_amount} ({enums.BalanceTransactionStatus.humanize(self.status)})"
+        amount = get_friendly_currency_amount(self.amount / 100, self.currency)
+        status = enums.BalanceTransactionStatus.humanize(self.status)
+        return f"{amount} ({status})"
 
     def get_source_class(self):
         try:
@@ -364,9 +366,8 @@ class Charge(StripeModel):
     objects = ChargeManager()
 
     def __str__(self):
-        amount = self.human_readable_amount
-        status = self.human_readable_status
-        return "{amount} ({status})".format(amount=amount, status=status)
+        amount = get_friendly_currency_amount(self.amount, self.currency)
+        return f"{amount} ({self.human_readable_status})"
 
     @property
     def fee(self):
@@ -453,6 +454,8 @@ class Charge(StripeModel):
 # TODO Add Tests
 class Mandate(StripeModel):
     """
+    A Mandate is a record of the permission a customer has given you to debit their payment method.
+
     https://stripe.com/docs/api/mandates
     """
 
@@ -487,8 +490,12 @@ class Mandate(StripeModel):
 
 class Product(StripeModel):
     """
-    Stripe documentation:
-    - https://stripe.com/docs/api#products
+    Products describe the specific goods or services you offer to your customers.
+    For example, you might offer a Standard and Premium version of your goods or service;
+    each version would be a separate Product. They can be used in conjunction with
+    Prices to configure pricing in Payment Links, Checkout, and Subscriptions.
+
+    Stripe documentation: https://stripe.com/docs/api?lang=python#products
     """
 
     stripe_class = stripe.Product
@@ -744,7 +751,7 @@ class Customer(StripeModel):
     )
     date_purged = models.DateTimeField(null=True, editable=False)
 
-    class Meta:
+    class Meta(StripeModel.Meta):
         unique_together = ("subscriber", "livemode", "djstripe_owner_account")
 
     def __str__(self):
@@ -1289,7 +1296,7 @@ class Customer(StripeModel):
         data,
         pending_relations=None,
         api_key=djstripe_settings.STRIPE_SECRET_KEY,
-    ):  # noqa (function complexity)
+    ):
         from .billing import Coupon
         from .payment_methods import DjstripePaymentMethod
 
@@ -1388,7 +1395,7 @@ class Dispute(StripeModel):
     card issuer. When this happens, you're given the opportunity to
     respond to the dispute with evidence that shows that the charge is legitimate
 
-    Stripe documentation: https://stripe.com/docs/api#disputes
+    Stripe documentation: https://stripe.com/docs/api?lang=python#disputes
     """
 
     stripe_class = stripe.Dispute
@@ -1443,7 +1450,9 @@ class Dispute(StripeModel):
     status = StripeEnumField(enum=enums.DisputeStatus)
 
     def __str__(self):
-        return f"{self.human_readable_amount} ({enums.DisputeStatus.humanize(self.status)}) "
+        amount = get_friendly_currency_amount(self.amount / 100, self.currency)
+        status = enums.DisputeStatus.humanize(self.status)
+        return f"{amount} ({status}) "
 
     def get_stripe_dashboard_url(self) -> str:
         """Get the stripe dashboard url for this object."""
@@ -1507,7 +1516,7 @@ class Event(StripeModel):
     When an interesting event occurs, a new Event object is created and POSTed
     to the configured webhook URL if the Event type matches.
 
-    Stripe documentation: https://stripe.com/docs/api/events
+    Stripe documentation: https://stripe.com/docs/api/events?lang=python
     """
 
     stripe_class = stripe.Event
@@ -1620,7 +1629,12 @@ class Event(StripeModel):
 
 class File(StripeModel):
     """
-    Stripe documentation: https://stripe.com/docs/api/files
+    This is an object representing a file hosted on Stripe's servers.
+    The file may have been uploaded by yourself using the create file request
+    (for example, when uploading dispute evidence) or it may have been created by
+    Stripe (for example, the results of a Sigma scheduled query).
+
+    Stripe documentation: https://stripe.com/docs/api/files?lang=python
     """
 
     stripe_class = stripe.File
@@ -1643,7 +1657,7 @@ class File(StripeModel):
 
     @classmethod
     def is_valid_object(cls, data):
-        return "object" in data and data["object"] in ("file", "file_upload")
+        return data and data.get("object") in ("file", "file_upload")
 
     def __str__(self):
         return f"{self.filename}, {enums.FilePurpose.humanize(self.purpose)}"
@@ -1657,7 +1671,11 @@ FileUpload = File
 
 class FileLink(StripeModel):
     """
-    Stripe documentation: https://stripe.com/docs/api/file_links
+    To share the contents of a File object with non-Stripe users,
+    you can create a FileLink. FileLinks contain a URL that can be used
+    to retrieve the contents of the file without authentication.
+
+    Stripe documentation: https://stripe.com/docs/api/file_links?lang=python
     """
 
     stripe_class = stripe.FileLink
@@ -1674,7 +1692,16 @@ class FileLink(StripeModel):
 
 class PaymentIntent(StripeModel):
     """
-    Stripe documentation: https://stripe.com/docs/api#payment_intents
+    A PaymentIntent guides you through the process of collecting a payment
+    from your customer. We recommend that you create exactly one PaymentIntent for each order
+    or customer session in your system. You can reference the PaymentIntent later to
+    see the history of payment attempts for a particular session.
+
+    A PaymentIntent transitions through multiple statuses throughout its lifetime as
+    it interfaces with Stripe.js to perform authentication flows and ultimately
+    creates at most one successful charge.
+
+    Stripe documentation: https://stripe.com/docs/api?lang=python#payment_intents
     """
 
     stripe_class = stripe.PaymentIntent
@@ -1851,20 +1878,17 @@ class PaymentIntent(StripeModel):
     def __str__(self):
         account = self.on_behalf_of
         customer = self.customer
+        amount = get_friendly_currency_amount(self.amount / 100, self.currency)
+        status = enums.PaymentIntentStatus.humanize(self.status)
 
         if account and customer:
-            return (
-                f"{self.human_readable_amount} ({enums.PaymentIntentStatus.humanize(self.status)}) "
-                f"for {account} "
-                f"by {customer}"
-            )
-
+            return f"{amount} ({status}) for {account} by {customer}"
         if account:
-            return f"{self.human_readable_amount} for {account}. {enums.PaymentIntentStatus.humanize(self.status)}"
+            return f"{amount} for {account}. {status}"
         if customer:
-            return f"{self.human_readable_amount} by {customer}. {enums.PaymentIntentStatus.humanize(self.status)}"
+            return f"{amount} by {customer}. {status}"
 
-        return f"{self.human_readable_amount} ({enums.PaymentIntentStatus.humanize(self.status)})"
+        return f"{amount} ({status})"
 
     def update(self, api_key=None, **kwargs):
         """
@@ -1917,7 +1941,7 @@ class SetupIntent(StripeModel):
     NOTE: You should not maintain long-lived, unconfirmed SetupIntents.
     For security purposes, SetupIntents older than 24 hours may no longer be valid.
 
-    Stripe documentation: https://stripe.com/docs/api#setup_intents
+    Stripe documentation: https://stripe.com/docs/api?lang=python#setup_intents
     """
 
     stripe_class = stripe.SetupIntent
@@ -2026,7 +2050,7 @@ class Payout(StripeModel):
     A Payout object is created when you receive funds from Stripe, or when you initiate
     a payout to either a bank account or debit card of a connected Stripe account.
 
-    Stripe documentation: https://stripe.com/docs/api#payouts
+    Stripe documentation: https://stripe.com/docs/api?lang=python#payouts
     """
 
     expand_fields = ["destination"]
@@ -2154,7 +2178,7 @@ class Price(StripeModel):
     """
 
     stripe_class = stripe.Price
-    expand_fields = ["tiers"]
+    expand_fields = ["product", "tiers"]
     stripe_dashboard_item_name = "prices"
 
     active = models.BooleanField(
@@ -2273,7 +2297,8 @@ class Price(StripeModel):
     def create(cls, **kwargs):
         # A few minor things are changed in the api-version of the create call
         api_kwargs = dict(kwargs)
-        api_kwargs["unit_amount"] = int(api_kwargs["unit_amount"] * 100)
+        if api_kwargs["unit_amount"]:
+            api_kwargs["unit_amount"] = int(api_kwargs["unit_amount"] * 100)
 
         if isinstance(api_kwargs.get("product"), StripeModel):
             api_kwargs["product"] = api_kwargs["product"].id
@@ -2286,28 +2311,23 @@ class Price(StripeModel):
         return price
 
     def __str__(self):
-        from .billing import Subscription
-
-        subscriptions = Subscription.objects.filter(plan__id=self.id).count()
-        if self.recurring:
-            return f"{self.human_readable_price} for {self.product.name} ({subscriptions} subscriptions)"
         return f"{self.human_readable_price} for {self.product.name}"
 
     @property
     def human_readable_price(self):
         if self.billing_scheme == "per_unit":
-            unit_amount = self.unit_amount / 100
+            unit_amount = (self.unit_amount or 0) / 100
             amount = get_friendly_currency_amount(unit_amount, self.currency)
         else:
             # tiered billing scheme
             tier_1 = self.tiers[0]
-            flat_amount_tier_1 = tier_1["flat_amount"]
             formatted_unit_amount_tier_1 = get_friendly_currency_amount(
-                tier_1["unit_amount"] / 100, self.currency
+                (tier_1["unit_amount"] or 0) / 100, self.currency
             )
             amount = f"Starts at {formatted_unit_amount_tier_1} per unit"
 
             # stripe shows flat fee even if it is set to 0.00
+            flat_amount_tier_1 = tier_1["flat_amount"]
             if flat_amount_tier_1 is not None:
                 formatted_flat_amount_tier_1 = get_friendly_currency_amount(
                     flat_amount_tier_1 / 100, self.currency
@@ -2346,7 +2366,11 @@ class Price(StripeModel):
 
 class Refund(StripeModel):
     """
-    Stripe documentation: https://stripe.com/docs/api#refund_object
+    Refund objects allow you to refund a charge that has previously been created
+    but not yet refunded. Funds will be refunded to the credit or debit card
+    that was originally charged.
+
+    Stripe documentation: https://stripe.com/docs/api?lang=python#refund_object
     """
 
     stripe_class = stripe.Refund
@@ -2404,10 +2428,6 @@ class Refund(StripeModel):
         return self.charge.get_stripe_dashboard_url()
 
     def __str__(self):
-        return (
-            f"{self.human_readable_amount} ({enums.RefundStatus.humanize(self.status)})"
-        )
-
-    @property
-    def human_readable_amount(self) -> str:
-        return get_friendly_currency_amount(self.amount / 100, self.currency)
+        amount = get_friendly_currency_amount(self.amount / 100, self.currency)
+        status = enums.RefundStatus.humanize(self.status)
+        return f"{amount} ({status})"

@@ -5,7 +5,7 @@ from django.db import models, transaction
 from stripe.error import InvalidRequestError
 
 from .. import enums
-from ..exceptions import StripeObjectManipulationException
+from ..exceptions import ImpossibleAPIRequest, StripeObjectManipulationException
 from ..fields import (
     JSONField,
     StripeCurrencyCodeField,
@@ -100,6 +100,8 @@ class DjstripePaymentMethod(models.Model):
 
         raw_field_data = data.get(field_name)
         id_ = get_id_from_stripe_data(raw_field_data)
+        if not id_:
+            raise ValueError(f"ID not found in Stripe data: {raw_field_data!r}")
 
         if id_.startswith("card"):
             source_cls = Card
@@ -143,6 +145,8 @@ class LegacySourceMixin:
 
     customer: Optional[StripeForeignKey]
     account: Optional[StripeForeignKey]
+    id: str
+    default_api_key: str
 
     @classmethod
     def _get_customer_or_account_from_kwargs(cls, **kwargs):
@@ -221,6 +225,8 @@ class LegacySourceMixin:
             **kwargs
         )
 
+        object_name = cls.stripe_class.OBJECT_NAME
+
         # First we try to retrieve by customer attribute,
         # then by account attribute
         if customer and account:
@@ -228,7 +234,7 @@ class LegacySourceMixin:
                 # retrieve by customer
                 return (
                     customer.api_retrieve(api_key=api_key)
-                    .sources.list(object=cls.stripe_class.OBJECT_NAME, **clean_kwargs)
+                    .sources.list(object=object_name, **clean_kwargs)
                     .auto_paging_iter()
                 )
             except Exception as customer_exc:
@@ -236,9 +242,7 @@ class LegacySourceMixin:
                     # retrieve by account
                     return (
                         account.api_retrieve(api_key=api_key)
-                        .external_accounts.list(
-                            object=cls.stripe_class.OBJECT_NAME, **clean_kwargs
-                        )
+                        .external_accounts.list(object=object_name, **clean_kwargs)
                         .auto_paging_iter()
                     )
                 except Exception:
@@ -247,18 +251,22 @@ class LegacySourceMixin:
         if customer:
             return (
                 customer.api_retrieve(api_key=api_key)
-                .sources.list(object=cls.stripe_class.OBJECT_NAME, **clean_kwargs)
+                .sources.list(object=object_name, **clean_kwargs)
                 .auto_paging_iter()
             )
 
         if account:
             return (
                 account.api_retrieve(api_key=api_key)
-                .external_accounts.list(
-                    object=cls.stripe_class.OBJECT_NAME, **clean_kwargs
-                )
+                .external_accounts.list(object=object_name, **clean_kwargs)
                 .auto_paging_iter()
             )
+
+        raise ImpossibleAPIRequest(
+            f"Can't list {object_name} without a customer or account object."
+            " This may happen if not all accounts or customer objects are in the db."
+            ' Please run "python manage.py djstripe_sync_models Account Customer" as a potential fix.'
+        )
 
     def get_stripe_dashboard_url(self) -> str:
         if self.customer:
@@ -314,6 +322,12 @@ class LegacySourceMixin:
                 api_key=api_key,
             )
 
+        raise ImpossibleAPIRequest(
+            f"Can't retrieve {self.__class__} without a customer or account object."
+            " This may happen if not all accounts or customer objects are in the db."
+            ' Please run "python manage.py djstripe_sync_models Account Customer" as a potential fix.'
+        )
+
     def _api_delete(self, api_key=None, stripe_account=None, **kwargs):
         # OVERRIDING the parent version of this function
         # Cards & Banks Accounts must be manipulated through a customer or account.
@@ -341,8 +355,22 @@ class LegacySourceMixin:
                 **kwargs,
             )
 
+        raise ImpossibleAPIRequest(
+            f"Can't delete {self.__class__} without a customer or account object."
+            " This may happen if not all accounts or customer objects are in the db."
+            ' Please run "python manage.py djstripe_sync_models Account Customer" as a potential fix.'
+        )
+
 
 class BankAccount(LegacySourceMixin, StripeModel):
+    """
+    These bank accounts are payment methods on Customer objects.
+    On the other hand External Accounts are transfer destinations on Account
+    objects for Custom accounts. They can be bank accounts or debit cards as well.
+
+    Stripe documentation:https://stripe.com/docs/api/customer_bank_accounts
+    """
+
     stripe_class = stripe.BankAccount
 
     account = StripeForeignKey(
@@ -424,9 +452,12 @@ class BankAccount(LegacySourceMixin, StripeModel):
 
     def api_retrieve(self, **kwargs):
         if not self.customer and not self.account:
-            raise NotImplementedError(
+            raise ImpossibleAPIRequest(
                 "Can't retrieve a bank account without a customer or account object."
+                " This may happen if not all accounts or customer objects are in the db."
+                ' Please run "python manage.py djstripe_sync_models Account Customer" as a potential fix.'
             )
+
         return super().api_retrieve(**kwargs)
 
 
@@ -569,6 +600,8 @@ class Card(LegacySourceMixin, StripeModel):
             account_template = f"{enums.CardBrand.humanize(self.brand)} {self.account.default_currency} {'Default' if default else ''} {self.last4}"
             return account_template
 
+        return self.id or ""
+
     @classmethod
     def create_token(
         cls,
@@ -606,7 +639,12 @@ class Card(LegacySourceMixin, StripeModel):
 
 class Source(StripeModel):
     """
-    Stripe documentation: https://stripe.com/docs/api#sources
+    Source objects allow you to accept a variety of payment methods.
+    They represent a customer's payment instrument, and can be used with
+    the Stripe API just like a Card object: once chargeable,
+    they can be charged, or can be attached to customers.
+
+    Stripe documentation: https://stripe.com/docs/api?lang=python#sources
     """
 
     amount = StripeDecimalCurrencyAmountField(
@@ -731,20 +769,36 @@ class Source(StripeModel):
                 self.api_retrieve(api_key=api_key).detach(), api_key=api_key
             )
             return True
-        except (InvalidRequestError, NotImplementedError):
+        except InvalidRequestError:
             # The source was already detached. Resyncing.
-            # NotImplementedError is an artifact of stripe-python<2.0
-            # https://github.com/stripe/stripe-python/issues/376
             self.sync_from_stripe_data(
                 self.api_retrieve(api_key=self.default_api_key),
                 api_key=self.default_api_key,
             )
             return False
 
+    @classmethod
+    def api_list(cls, api_key=djstripe_settings.STRIPE_SECRET_KEY, **kwargs):
+        """
+        Call the stripe API's list operation for this model.
+        :param api_key: The api key to use for this request. \
+            Defaults to djstripe_settings.STRIPE_SECRET_KEY.
+        :type api_key: string
+        See Stripe documentation for accepted kwargs for each object.
+        :returns: an iterator over all items in the query
+        """
+        return Customer.stripe_class.list_sources(
+            object="source", api_key=api_key, **kwargs
+        ).auto_paging_iter()
+
 
 class PaymentMethod(StripeModel):
     """
-    Stripe documentation: https://stripe.com/docs/api#payment_methods
+    PaymentMethod objects represent your customer's payment instruments.
+    You can use them with PaymentIntents to collect payments or save them
+    to Customer objects to store instrument details for future payments.
+
+    Stripe documentation: https://stripe.com/docs/api?lang=python#payment_methods
     """
 
     stripe_class = stripe.PaymentMethod

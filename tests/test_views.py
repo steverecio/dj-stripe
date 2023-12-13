@@ -8,7 +8,6 @@ import stripe
 from django.apps import apps
 from django.contrib import messages
 from django.contrib.admin import helpers, site
-from django.contrib.auth.models import AnonymousUser
 from django.contrib.messages.middleware import MessageMiddleware
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.test.client import RequestFactory
@@ -16,7 +15,7 @@ from django.urls import reverse
 from pytest_django.asserts import assertContains
 
 from djstripe import models, utils
-from djstripe.views import ConfirmCustomAction
+from djstripe.admin.views import ConfirmCustomAction
 from tests import (
     FAKE_BALANCE_TRANSACTION,
     FAKE_CARD_AS_PAYMENT_METHOD,
@@ -30,7 +29,7 @@ from tests import (
     FAKE_SUBSCRIPTION_SCHEDULE,
 )
 
-from .fields.models import TestCustomActionModel
+from .fields.models import CustomActionModel
 
 pytestmark = pytest.mark.django_db
 
@@ -62,7 +61,7 @@ class TestConfirmCustomActionView:
     )
     def test_get_form_kwargs(self, action_name, admin_user, monkeypatch):
 
-        model = TestCustomActionModel
+        model = CustomActionModel
 
         # monkeypatch utils.get_model
         def mock_get_model(*args, **kwargs):
@@ -76,7 +75,7 @@ class TestConfirmCustomActionView:
         }
 
         # get the custom action POST url
-        change_url = reverse("djstripe:djstripe_custom_action", kwargs=kwargs)
+        change_url = reverse("admin:djstripe_custom_action", kwargs=kwargs)
 
         request = RequestFactory().get(change_url)
         # add the admin user to the mocked request
@@ -104,66 +103,9 @@ class TestConfirmCustomActionView:
             "_cancel_subscription_schedule",
         ],
     )
-    @pytest.mark.parametrize("is_admin_user", [True, False])
-    def test_dispatch(self, is_admin_user, action_name, admin_user, monkeypatch):
-
-        model = TestCustomActionModel
-
-        # monkeypatch utils.get_model
-        def mock_get_model(*args, **kwargs):
-            return model
-
-        monkeypatch.setattr(utils, "get_model", mock_get_model)
-
-        kwargs = {
-            "action_name": action_name,
-            "model_name": model.__name__.lower(),
-        }
-
-        # get the custom action POST url
-        change_url = reverse("djstripe:djstripe_custom_action", kwargs=kwargs)
-
-        request = RequestFactory().get(change_url)
-
-        if is_admin_user:
-            # add the admin user to the mocked request
-            request.user = admin_user
-        else:
-            # add the AnonymousUser to the mocked request
-            request.user = AnonymousUser()
-
-        # Add the session/message middleware to the request
-        SessionMiddleware(self.dummy_get_response).process_request(request)
-        MessageMiddleware(self.dummy_get_response).process_request(request)
-
-        view = ConfirmCustomAction()
-        view.setup(request, **kwargs)
-
-        # Invoke the dispatch method
-        response = view.dispatch(request)
-
-        if is_admin_user:
-            assert response.status_code == 200
-        else:
-            assert response.status_code == 302
-            assert (
-                response.url
-                == f"/admin/login/?next=/djstripe/action/{action_name}/testcustomactionmodel/"
-            )
-
-    @pytest.mark.parametrize(
-        "action_name",
-        [
-            "_resync_instances",
-            "_sync_all_instances",
-            "_cancel",
-            "_release_subscription_schedule",
-            "_cancel_subscription_schedule",
-        ],
-    )
     @pytest.mark.parametrize("djstripe_owner_account_exists", [False, True])
     def test_form_valid(self, djstripe_owner_account_exists, action_name, monkeypatch):
-        model = TestCustomActionModel
+        model = CustomActionModel
 
         # create instance to be used in the Django Admin Action
         instance = model.objects.create(id="test")
@@ -193,7 +135,7 @@ class TestConfirmCustomActionView:
         }
 
         # get the custom action POST url
-        change_url = reverse("djstripe:djstripe_custom_action", kwargs=kwargs)
+        change_url = reverse("admin:djstripe_custom_action", kwargs=kwargs)
 
         request = RequestFactory().post(change_url, data=data, follow=True)
 
@@ -221,7 +163,7 @@ class TestConfirmCustomActionView:
 
         # assert user redirected to the correct url
         assert response.status_code == 302
-        assert response.url == "/admin/fields/testcustomactionmodel/"
+        assert response.url == "/admin/fields/customactionmodel/"
 
     @pytest.mark.parametrize(
         "action_name",
@@ -237,7 +179,7 @@ class TestConfirmCustomActionView:
     def test_form_invalid(
         self, djstripe_owner_account_exists, action_name, monkeypatch
     ):
-        model = TestCustomActionModel
+        model = CustomActionModel
 
         # create instance to be used in the Django Admin Action
         instance = model.objects.create(id="test")
@@ -263,7 +205,7 @@ class TestConfirmCustomActionView:
         }
 
         # get the custom action POST url
-        change_url = reverse("djstripe:djstripe_custom_action", kwargs=kwargs)
+        change_url = reverse("admin:djstripe_custom_action", kwargs=kwargs)
 
         request = RequestFactory().post(change_url, data=data, follow=True)
 
@@ -320,7 +262,7 @@ class TestConfirmCustomActionView:
 
                 # get the custom action POST url
                 change_url = reverse(
-                    "djstripe:djstripe_custom_action",
+                    "admin:djstripe_custom_action",
                     kwargs=kwargs,
                 )
 
@@ -336,12 +278,12 @@ class TestConfirmCustomActionView:
                 # Invoke the Custom Actions
                 view._sync_all_instances(request, model.objects.none())
 
-                # assert correct Success messages are emmitted
+                # assert correct Success messages are emitted
                 messages_sent_dictionary = {
                     m.message: m.level_tag for m in messages.get_messages(request)
                 }
 
-                # assert correct success message was emmitted
+                # assert correct success message was emitted
                 assert (
                     messages_sent_dictionary.get("Successfully Synced All Instances")
                     == "success"
@@ -349,7 +291,7 @@ class TestConfirmCustomActionView:
 
     @pytest.mark.parametrize("djstripe_owner_account_exists", [False, True])
     def test__resync_instances(self, djstripe_owner_account_exists, monkeypatch):
-        model = TestCustomActionModel
+        model = CustomActionModel
 
         # create instance to be used in the Django Admin Action
         instance = model.objects.create(id="test")
@@ -390,7 +332,7 @@ class TestConfirmCustomActionView:
         }
 
         # get the custom action POST url
-        change_url = reverse("djstripe:djstripe_custom_action", kwargs=kwargs)
+        change_url = reverse("admin:djstripe_custom_action", kwargs=kwargs)
 
         request = RequestFactory().post(change_url, data=data, follow=True)
 
@@ -404,12 +346,12 @@ class TestConfirmCustomActionView:
         # Invoke the Custom Actions
         view._resync_instances(request, [instance])
 
-        # assert correct Success messages are emmitted
+        # assert correct Success messages are emitted
         messages_sent_dictionary = {
             m.message: m.level_tag for m in messages.get_messages(request)
         }
 
-        # assert correct success message was emmitted
+        # assert correct success message was emitted
         assert (
             messages_sent_dictionary.get(f"Successfully Synced: {instance}")
             == "success"
@@ -427,7 +369,7 @@ class TestConfirmCustomActionView:
 
     def test__resync_instances_stripe_permission_error(self, monkeypatch):
 
-        model = TestCustomActionModel
+        model = CustomActionModel
 
         # create instance to be used in the Django Admin Action
         instance = model.objects.create(id="test")
@@ -453,7 +395,7 @@ class TestConfirmCustomActionView:
         }
 
         # get the custom action POST url
-        change_url = reverse("djstripe:djstripe_custom_action", kwargs=kwargs)
+        change_url = reverse("admin:djstripe_custom_action", kwargs=kwargs)
 
         request = RequestFactory().post(change_url, data=data, follow=True)
 
@@ -467,16 +409,16 @@ class TestConfirmCustomActionView:
         # Invoke the Custom Actions
         view._resync_instances(request, [instance])
 
-        # assert correct Success messages are emmitted
+        # assert correct Success messages are emitted
         messages_sent_dictionary = {
             m.message.user_message: m.level_tag for m in messages.get_messages(request)
         }
 
-        # assert correct success message was emmitted
+        # assert correct success message was emitted
         assert messages_sent_dictionary.get("some random error message") == "warning"
 
     def test__resync_instances_stripe_invalid_request_error(self, monkeypatch):
-        model = TestCustomActionModel
+        model = CustomActionModel
 
         # create instance to be used in the Django Admin Action
         instance = model.objects.create(id="test")
@@ -502,7 +444,7 @@ class TestConfirmCustomActionView:
         }
 
         # get the custom action POST url
-        change_url = reverse("djstripe:djstripe_custom_action", kwargs=kwargs)
+        change_url = reverse("admin:djstripe_custom_action", kwargs=kwargs)
 
         request = RequestFactory().post(change_url, data=data, follow=True)
 
@@ -519,7 +461,7 @@ class TestConfirmCustomActionView:
 
         assert str(exc_info.value.param) == "some random error message"
 
-    def test__cancel_subscription_instances(  # noqa: C901
+    def test__cancel_subscription_instances(
         self,
         monkeypatch,
     ):
@@ -586,7 +528,7 @@ class TestConfirmCustomActionView:
         }
 
         # get the custom action POST url
-        change_url = reverse("djstripe:djstripe_custom_action", kwargs=kwargs)
+        change_url = reverse("admin:djstripe_custom_action", kwargs=kwargs)
 
         request = RequestFactory().post(change_url, data=data, follow=True)
 
@@ -600,18 +542,18 @@ class TestConfirmCustomActionView:
         # Invoke the Custom Actions
         view._cancel(request, [instance])
 
-        # assert correct Success messages are emmitted
+        # assert correct Success messages are emitted
         messages_sent_dictionary = {
             m.message: m.level_tag for m in messages.get_messages(request)
         }
 
-        # assert correct success message was emmitted
+        # assert correct success message was emitted
         assert (
             messages_sent_dictionary.get(f"Successfully Canceled: {instance}")
             == "success"
         )
 
-    def test__cancel_subscription_instances_stripe_invalid_request_error(  # noqa: C901
+    def test__cancel_subscription_instances_stripe_invalid_request_error(
         self,
         monkeypatch,
     ):
@@ -678,7 +620,7 @@ class TestConfirmCustomActionView:
         }
 
         # get the custom action POST url
-        change_url = reverse("djstripe:djstripe_custom_action", kwargs=kwargs)
+        change_url = reverse("admin:djstripe_custom_action", kwargs=kwargs)
 
         request = RequestFactory().post(change_url, data=data, follow=True)
 
@@ -693,7 +635,7 @@ class TestConfirmCustomActionView:
             # Invoke the Custom Actions
             view._cancel(request, [instance])
 
-    def test__release_subscription_schedule(  # noqa: C901
+    def test__release_subscription_schedule(
         self,
         monkeypatch,
     ):
@@ -765,7 +707,7 @@ class TestConfirmCustomActionView:
         }
 
         # get the custom action POST url
-        change_url = reverse("djstripe:djstripe_custom_action", kwargs=kwargs)
+        change_url = reverse("admin:djstripe_custom_action", kwargs=kwargs)
 
         request = RequestFactory().post(change_url, data=data, follow=True)
 
@@ -779,18 +721,18 @@ class TestConfirmCustomActionView:
         # Invoke the Custom Actions
         view._release_subscription_schedule(request, [instance])
 
-        # assert correct Success messages are emmitted
+        # assert correct Success messages are emitted
         messages_sent_dictionary = {
             m.message: m.level_tag for m in messages.get_messages(request)
         }
 
-        # assert correct success message was emmitted
+        # assert correct success message was emitted
         assert (
             messages_sent_dictionary.get(f"Successfully Released: {instance}")
             == "success"
         )
 
-    def test__cancel_subscription_schedule(  # noqa: C901
+    def test__cancel_subscription_schedule(
         self,
         monkeypatch,
     ):
@@ -862,7 +804,7 @@ class TestConfirmCustomActionView:
         }
 
         # get the custom action POST url
-        change_url = reverse("djstripe:djstripe_custom_action", kwargs=kwargs)
+        change_url = reverse("admin:djstripe_custom_action", kwargs=kwargs)
 
         request = RequestFactory().post(change_url, data=data, follow=True)
 
@@ -876,18 +818,18 @@ class TestConfirmCustomActionView:
         # Invoke the Custom Actions
         view._cancel_subscription_schedule(request, [instance])
 
-        # assert correct Success messages are emmitted
+        # assert correct Success messages are emitted
         messages_sent_dictionary = {
             m.message: m.level_tag for m in messages.get_messages(request)
         }
 
-        # assert correct success message was emmitted
+        # assert correct success message was emitted
         assert (
             messages_sent_dictionary.get(f"Successfully Canceled: {instance}")
             == "success"
         )
 
-    def test__release_subscription_schedule_stripe_invalid_request_error(  # noqa: C901
+    def test__release_subscription_schedule_stripe_invalid_request_error(
         self,
         monkeypatch,
     ):
@@ -959,7 +901,7 @@ class TestConfirmCustomActionView:
         }
 
         # get the custom action POST url
-        change_url = reverse("djstripe:djstripe_custom_action", kwargs=kwargs)
+        change_url = reverse("admin:djstripe_custom_action", kwargs=kwargs)
 
         request = RequestFactory().post(change_url, data=data, follow=True)
 
@@ -974,7 +916,7 @@ class TestConfirmCustomActionView:
             # Invoke the Custom Actions
             view._release_subscription_schedule(request, [instance])
 
-    def test__cancel_subscription_schedule_stripe_invalid_request_error(  # noqa: C901
+    def test__cancel_subscription_schedule_stripe_invalid_request_error(
         self,
         monkeypatch,
     ):
@@ -1046,7 +988,7 @@ class TestConfirmCustomActionView:
         }
 
         # get the custom action POST url
-        change_url = reverse("djstripe:djstripe_custom_action", kwargs=kwargs)
+        change_url = reverse("admin:djstripe_custom_action", kwargs=kwargs)
 
         request = RequestFactory().post(change_url, data=data, follow=True)
 

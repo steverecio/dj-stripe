@@ -290,6 +290,7 @@ class Migration(migrations.Migration):
                         related_name="charges",
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The account (if any) the charge was made on behalf of without triggering an automatic transfer.",
                     ),
                 ),
                 (
@@ -390,7 +391,7 @@ class Migration(migrations.Migration):
                 (
                     "duration",
                     djstripe.fields.StripeEnumField(
-                        enum=djstripe.enums.CouponDuration, max_length=9
+                        default="once", enum=djstripe.enums.CouponDuration, max_length=9
                     ),
                 ),
                 (
@@ -451,10 +452,14 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
-            options={"unique_together": {("id", "livemode")}},
+            options={
+                "get_latest_by": "created",
+                "unique_together": {("id", "livemode")},
+            },
         ),
         migrations.CreateModel(
             name="PaymentMethod",
@@ -639,6 +644,7 @@ class Migration(migrations.Migration):
                         related_name="+",
                         to="djstripe.paymentmethod",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="default payment method used for subscriptions and invoices for the customer.",
                     ),
                 ),
                 (
@@ -649,13 +655,15 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
             options={
+                "get_latest_by": "created",
                 "unique_together": {
                     ("subscriber", "livemode", "djstripe_owner_account")
-                }
+                },
             },
         ),
         migrations.CreateModel(
@@ -717,6 +725,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -784,6 +793,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -858,6 +868,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -1092,6 +1103,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -1230,6 +1242,7 @@ class Migration(migrations.Migration):
                         related_name="subscriptions",
                         to="djstripe.customer",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The customer associated with this subscription.",
                     ),
                 ),
                 (
@@ -1384,6 +1397,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.SET_NULL,
                         to="djstripe.event",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="Event object contained in the (valid) Webhook",
                     ),
                 ),
             ],
@@ -1398,6 +1412,7 @@ class Migration(migrations.Migration):
                 related_name="payment_methods",
                 to="djstripe.customer",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="Customer to which this PaymentMethod is saved. This will not be set when the PaymentMethod has not been saved to a Customer.",
             ),
         ),
         migrations.AddField(
@@ -1409,6 +1424,7 @@ class Migration(migrations.Migration):
                 on_delete=django.db.models.deletion.SET_NULL,
                 to="djstripe.product",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="The product whose pricing this plan determines.",
             ),
         ),
         migrations.CreateModel(
@@ -1614,6 +1630,7 @@ class Migration(migrations.Migration):
                         related_name="%(class)ss",
                         to="djstripe.customer",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The customer associated with this invoice.",
                     ),
                 ),
                 (
@@ -1624,6 +1641,7 @@ class Migration(migrations.Migration):
                         related_name="%(class)ss",
                         to="djstripe.subscription",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The subscription that this invoice was prepared for, if any.",
                     ),
                 ),
                 (
@@ -1739,7 +1757,7 @@ class Migration(migrations.Migration):
                     djstripe.fields.JSONField(blank=True, null=True),
                 ),
             ],
-            options={"ordering": ["-created"]},
+            options={"get_latest_by": "created", "ordering": ["-created"]},
         ),
         migrations.CreateModel(
             name="IdempotencyKey",
@@ -1774,6 +1792,7 @@ class Migration(migrations.Migration):
                 related_name="charges",
                 to="djstripe.customer",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="The customer associated with this charge.",
             ),
         ),
         migrations.AddField(
@@ -1786,6 +1805,7 @@ class Migration(migrations.Migration):
                 related_name="charges",
                 to="djstripe.dispute",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="Details about the dispute if the charge has been disputed.",
             ),
         ),
         migrations.AddField(
@@ -1797,6 +1817,7 @@ class Migration(migrations.Migration):
                 related_name="charges",
                 to="djstripe.invoice",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="The invoice this charge is for if one exists.",
             ),
         ),
         migrations.AddField(
@@ -1819,6 +1840,7 @@ class Migration(migrations.Migration):
                 on_delete=django.db.models.deletion.CASCADE,
                 to="djstripe.transfer",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="The transfer to the `destination` account (only applicable if the charge was created using the `destination` parameter).",
             ),
         ),
         migrations.CreateModel(
@@ -1936,6 +1958,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -2008,6 +2031,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -2057,6 +2081,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.balancetransaction",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="Balance transaction that describes the impact on your account balance.",
                     ),
                 ),
                 (
@@ -2065,6 +2090,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.charge",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The charge that the application fee was taken from.",
                     ),
                 ),
                 (
@@ -2075,6 +2101,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -2088,6 +2115,7 @@ class Migration(migrations.Migration):
                 on_delete=django.db.models.deletion.SET_NULL,
                 to="djstripe.balancetransaction",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="The balance transaction that describes the impact of this charge on your account balance (not including refunds or disputes).",
             ),
         ),
         migrations.AddField(
@@ -2099,6 +2127,7 @@ class Migration(migrations.Migration):
                 on_delete=django.db.models.deletion.SET_NULL,
                 to="djstripe.balancetransaction",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="Balance transaction that describes the impact on your account balance.",
             ),
         ),
         migrations.CreateModel(
@@ -2179,6 +2208,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.SET_NULL,
                         to="djstripe.customer",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="Customer this SetupIntent belongs to, if one exists.",
                     ),
                 ),
                 (
@@ -2190,6 +2220,7 @@ class Migration(migrations.Migration):
                         related_name="setup_intents",
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The account (if any) for which the setup is intended.",
                     ),
                 ),
                 (
@@ -2200,6 +2231,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.SET_NULL,
                         to="djstripe.paymentmethod",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="Payment method used in this PaymentIntent.",
                     ),
                 ),
                 (
@@ -2210,6 +2242,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -2341,6 +2374,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.customer",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="Customer this PaymentIntent is for if one exists.",
                     ),
                 ),
                 (
@@ -2352,6 +2386,7 @@ class Migration(migrations.Migration):
                         related_name="payment_intents",
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The account (if any) for which the funds of the PaymentIntent are intended.",
                     ),
                 ),
                 (
@@ -2362,6 +2397,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.SET_NULL,
                         to="djstripe.paymentmethod",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="Payment method used in this PaymentIntent.",
                     ),
                 ),
                 (
@@ -2372,6 +2408,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -2386,6 +2423,7 @@ class Migration(migrations.Migration):
                 related_name="charges",
                 to="djstripe.paymentintent",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="PaymentIntent associated with this charge, if one exists.",
             ),
         ),
         migrations.AddField(
@@ -2408,6 +2446,7 @@ class Migration(migrations.Migration):
                 related_name="setup_intents",
                 to="djstripe.setupintent",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="We can use this SetupIntent to collect user authentication when creating a subscription without immediate payment or updating a subscription's payment method, allowing you to optimize for off-session payments.",
             ),
         ),
         migrations.AddField(
@@ -2419,6 +2458,7 @@ class Migration(migrations.Migration):
                 related_name="charges",
                 to="djstripe.paymentmethod",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="PaymentMethod used in this charge.",
             ),
         ),
         migrations.AddField(
@@ -2431,6 +2471,7 @@ class Migration(migrations.Migration):
                 related_name="+",
                 to="djstripe.paymentmethod",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="Default payment method for the invoice. It must belong to the customer associated with the invoice. If not set, defaults to the subscription's default payment method, if any, or to the default payment method in the customer's invoice settings.",
             ),
         ),
         migrations.CreateModel(
@@ -2725,6 +2766,7 @@ class Migration(migrations.Migration):
                         related_name="%(class)ss",
                         to="djstripe.customer",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The customer associated with this invoice.",
                     ),
                 ),
                 (
@@ -2736,6 +2778,7 @@ class Migration(migrations.Migration):
                         related_name="+",
                         to="djstripe.paymentmethod",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="Default payment method for the invoice. It must belong to the customer associated with the invoice. If not set, defaults to the subscription's default payment method, if any, or to the default payment method in the customer's invoice settings.",
                     ),
                 ),
                 (
@@ -2755,6 +2798,7 @@ class Migration(migrations.Migration):
                         related_name="%(class)ss",
                         to="djstripe.subscription",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The subscription that this invoice was prepared for, if any.",
                     ),
                 ),
                 (
@@ -2784,10 +2828,11 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
-            options={"abstract": False, "ordering": ["-created"]},
+            options={"get_latest_by": "created", "ordering": ["-created"]},
         ),
         migrations.CreateModel(
             name="TaxRate",
@@ -2868,10 +2913,14 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
-            options={"abstract": False, "get_latest_by": "created"},
+            options={
+                "get_latest_by": "created",
+                "verbose_name": "Tax Rate",
+            },
         ),
         migrations.AddField(
             model_name="invoice",
@@ -2928,6 +2977,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.taxrate",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The tax rate that was applied to get this tax amount.",
                     ),
                 ),
             ],
@@ -2967,6 +3017,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.taxrate",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The tax rate that was applied to get this tax amount.",
                     ),
                 ),
             ],
@@ -2982,6 +3033,7 @@ class Migration(migrations.Migration):
                 related_name="+",
                 to="djstripe.paymentmethod",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="The default payment method for the subscription. It must belong to the customer associated with the subscription. If not set, invoices will use the default payment method in the customer's invoice settings.",
             ),
         ),
         migrations.AddField(
@@ -3037,6 +3089,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.balancetransaction",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="Balance transaction that describes the impact on your account balance.",
                     ),
                 ),
                 (
@@ -3046,6 +3099,7 @@ class Migration(migrations.Migration):
                         related_name="refunds",
                         to="djstripe.applicationfee",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The application fee that was refunded",
                     ),
                 ),
                 (
@@ -3056,6 +3110,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -3254,6 +3309,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -3268,6 +3324,7 @@ class Migration(migrations.Migration):
                 on_delete=django.db.models.deletion.CASCADE,
                 to="djstripe.account",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="The Stripe Account this object belongs to.",
             ),
         ),
         migrations.CreateModel(
@@ -3310,6 +3367,7 @@ class Migration(migrations.Migration):
                 on_delete=django.db.models.deletion.CASCADE,
                 to="djstripe.account",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="The Stripe Account this object belongs to.",
             ),
         ),
         migrations.AddField(
@@ -3321,6 +3379,7 @@ class Migration(migrations.Migration):
                 on_delete=django.db.models.deletion.CASCADE,
                 to="djstripe.account",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="The Stripe Account this object belongs to.",
             ),
         ),
         migrations.AddField(
@@ -3332,6 +3391,7 @@ class Migration(migrations.Migration):
                 on_delete=django.db.models.deletion.CASCADE,
                 to="djstripe.account",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="The Stripe Account this object belongs to.",
             ),
         ),
         migrations.CreateModel(
@@ -3405,6 +3465,7 @@ class Migration(migrations.Migration):
                         related_name="refunds",
                         to="djstripe.charge",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The charge that was refunded",
                     ),
                 ),
                 (
@@ -3414,6 +3475,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.SET_NULL,
                         to="djstripe.balancetransaction",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="Balance transaction that describes the impact on your account balance.",
                     ),
                 ),
                 (
@@ -3425,6 +3487,7 @@ class Migration(migrations.Migration):
                         related_name="failure_refunds",
                         to="djstripe.balancetransaction",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="If the refund failed, this balance transaction describes the adjustment made on your account balance that reverses the initial balance transaction.",
                     ),
                 ),
                 (
@@ -3435,6 +3498,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -3494,6 +3558,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.SET_NULL,
                         to="djstripe.fileupload",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The file object representing the results of the query.",
                     ),
                 ),
                 (
@@ -3504,6 +3569,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -3601,6 +3667,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.SET_NULL,
                         to="djstripe.customer",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="Customer this Checkout is for if one exists.",
                     ),
                 ),
                 (
@@ -3610,6 +3677,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.SET_NULL,
                         to="djstripe.paymentintent",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="PaymentIntent created if SKUs or line items were provided.",
                     ),
                 ),
                 (
@@ -3619,6 +3687,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.SET_NULL,
                         to="djstripe.subscription",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="Subscription created if one or more plans were provided.",
                     ),
                 ),
                 (
@@ -3635,6 +3704,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -3745,6 +3815,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -3759,6 +3830,7 @@ class Migration(migrations.Migration):
                 on_delete=django.db.models.deletion.CASCADE,
                 to="djstripe.account",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="The Stripe Account this object belongs to.",
             ),
         ),
         migrations.CreateModel(
@@ -3814,6 +3886,7 @@ class Migration(migrations.Migration):
                         related_name="items",
                         to="djstripe.subscription",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The subscription this subscription item belongs to.",
                     ),
                 ),
                 (
@@ -3834,6 +3907,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
                 (
@@ -3852,6 +3926,7 @@ class Migration(migrations.Migration):
                 on_delete=django.db.models.deletion.CASCADE,
                 to="djstripe.account",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="The Stripe Account this object belongs to.",
             ),
         ),
         migrations.CreateModel(
@@ -3894,6 +3969,7 @@ class Migration(migrations.Migration):
                         related_name="transfer_reversals",
                         to="djstripe.balancetransaction",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="Balance transaction that describes the impact on your account balance.",
                     ),
                 ),
                 (
@@ -3903,6 +3979,7 @@ class Migration(migrations.Migration):
                         related_name="reversals",
                         to="djstripe.transfer",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The transfer that was reversed.",
                     ),
                 ),
                 (
@@ -3913,6 +3990,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -3960,6 +4038,7 @@ class Migration(migrations.Migration):
                         related_name="usage_records",
                         to="djstripe.subscriptionitem",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The subscription item this usage record contains data for.",
                     ),
                 ),
                 (
@@ -3970,6 +4049,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
@@ -4065,6 +4145,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
                 (
@@ -4074,6 +4155,7 @@ class Migration(migrations.Migration):
                         related_name="prices",
                         to="djstripe.product",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The product this price is associated with.",
                     ),
                 ),
                 (
@@ -4161,10 +4243,11 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],
-            options={"verbose_name": "Tax ID", "verbose_name_plural": "Tax IDs"},
+            options={"get_latest_by": "created", "verbose_name": "Tax ID"},
         ),
         migrations.CreateModel(
             name="InvoiceItem",
@@ -4235,6 +4318,7 @@ class Migration(migrations.Migration):
                         related_name="invoiceitems",
                         to="djstripe.customer",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The customer associated with this invoiceitem.",
                     ),
                 ),
                 (
@@ -4245,6 +4329,7 @@ class Migration(migrations.Migration):
                         related_name="invoiceitems",
                         to="djstripe.invoice",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The invoice to which this invoiceitem is attached.",
                     ),
                 ),
                 (
@@ -4264,6 +4349,7 @@ class Migration(migrations.Migration):
                         related_name="invoiceitems",
                         to="djstripe.subscription",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The subscription that this invoice item has been created for, if any.",
                     ),
                 ),
                 (
@@ -4284,6 +4370,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
                 (
@@ -4385,6 +4472,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
                 (
@@ -4505,6 +4593,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.PROTECT,
                         to="djstripe.bankaccount",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="Bank account or card the payout was sent to.",
                     ),
                 ),
                 (
@@ -4514,6 +4603,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.SET_NULL,
                         to="djstripe.balancetransaction",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="Balance transaction that describes the impact on your account balance.",
                     ),
                 ),
                 (
@@ -4525,6 +4615,7 @@ class Migration(migrations.Migration):
                         related_name="failure_payouts",
                         to="djstripe.balancetransaction",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="If the payout failed or was canceled, this will be the balance transaction that reversed the initial balance transaction, and puts the funds from the failed payout back in your balance.",
                     ),
                 ),
                 (
@@ -4535,6 +4626,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
                 (
@@ -4563,6 +4655,7 @@ class Migration(migrations.Migration):
                 related_name="+",
                 to="djstripe.transfer",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="The transfer which created this charge. Only present if the charge came from another Stripe account.",
             ),
         ),
         migrations.AddField(
@@ -4575,6 +4668,7 @@ class Migration(migrations.Migration):
                 related_name="fee_for_charge",
                 to="djstripe.applicationfee",
                 to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                help_text="The application fee (if any) for the charge.",
             ),
         ),
         migrations.CreateModel(
@@ -4639,6 +4733,7 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.CASCADE,
                         to="djstripe.account",
                         to_field=settings.DJSTRIPE_FOREIGN_KEY_TO_FIELD,
+                        help_text="The Stripe Account this object belongs to.",
                     ),
                 ),
             ],

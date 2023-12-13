@@ -1,14 +1,14 @@
 from django.contrib import admin
 from django.shortcuts import render
 
-from djstripe.admin import StripeModelAdmin
-from djstripe.forms import CustomActionForm
+from djstripe.admin.admin import StripeModelAdmin
+from djstripe.admin.forms import CustomActionForm
 
-from .models import TestCustomActionModel
+from .models import CustomActionModel
 
 
-@admin.register(TestCustomActionModel)
-class TestCustomActionModelAdmin(StripeModelAdmin):
+@admin.register(CustomActionModel)
+class CustomActionModelAdmin(StripeModelAdmin):
     def get_actions(self, request):
         # get all actions
         actions = super().get_actions(request)

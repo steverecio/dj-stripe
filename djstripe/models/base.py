@@ -1,15 +1,16 @@
 import logging
 import uuid
 from datetime import timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Type
 
 from django.apps import apps
 from django.db import IntegrityError, models, transaction
 from django.utils import dateformat, timezone
-from django.utils.encoding import smart_str
 from stripe.api_resources.abstract.api_resource import APIResource
 from stripe.error import InvalidRequestError
+from stripe.util import convert_to_stripe_object
 
+from ..exceptions import ImpossibleAPIRequest
 from ..fields import (
     JSONField,
     StripeDateTimeField,
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class StripeBaseModel(models.Model):
-    stripe_class: Optional[APIResource] = None
+    stripe_class: Type[APIResource] = APIResource
 
     djstripe_created = models.DateTimeField(auto_now_add=True, editable=False)
     djstripe_updated = models.DateTimeField(auto_now=True, editable=False)
@@ -97,7 +98,7 @@ class StripeModel(StripeBaseModel):
         null=True, blank=True, help_text="A description of this object."
     )
 
-    class Meta:
+    class Meta(StripeBaseModel.Meta):
         abstract = True
         get_latest_by = "created"
 
@@ -121,10 +122,6 @@ class StripeModel(StripeBaseModel):
                 item=self.stripe_dashboard_item_name,
                 id=self.id,
             )
-
-    @property
-    def human_readable_amount(self) -> str:
-        return get_friendly_currency_amount(self.amount / 100, self.currency)
 
     @property
     def default_api_key(self) -> str:
@@ -322,7 +319,6 @@ class StripeModel(StripeBaseModel):
         from .webhooks import WebhookEndpoint
 
         manipulated_data = cls._manipulate_stripe_object_hook(data)
-
         if not cls.is_valid_object(manipulated_data):
             raise ValueError(
                 "Trying to fit a %r into %r. Aborting."
@@ -434,6 +430,9 @@ class StripeModel(StripeBaseModel):
         # a flag to indicate if the given field is null upstream on Stripe
         is_nulled = False
 
+        if current_ids is None:
+            current_ids = set()
+
         if issubclass(field.related_model, StripeModel) or issubclass(
             field.related_model, DjstripePaymentMethod
         ):
@@ -478,15 +477,25 @@ class StripeModel(StripeBaseModel):
                 # requests the same object
                 current_ids.add(id_)
 
-                field_data, _ = field.related_model._get_or_create_from_stripe_object(
-                    manipulated_data,
-                    field_name,
-                    refetch=refetch,
-                    current_ids=current_ids,
-                    pending_relations=pending_relations,
-                    stripe_account=stripe_account,
-                    api_key=api_key,
-                )
+                try:
+                    (
+                        field_data,
+                        _,
+                    ) = field.related_model._get_or_create_from_stripe_object(
+                        manipulated_data,
+                        field_name,
+                        refetch=refetch,
+                        current_ids=current_ids,
+                        pending_relations=pending_relations,
+                        stripe_account=stripe_account,
+                        api_key=api_key,
+                    )
+                except ImpossibleAPIRequest:
+                    # Found to happen in the following situation:
+                    # Customer has a `default_source` set to a `card_` object,
+                    # and neither the Customer nor the Card are present in db.
+                    # This skip is a hack, but it will prevent a crash.
+                    skip = True
 
                 # Remove the id of the current object from the list
                 # after it has been created or retrieved
@@ -503,7 +512,11 @@ class StripeModel(StripeBaseModel):
         """
         Returns whether the data is a valid object for the class
         """
-        return "object" in data and data["object"] == cls.stripe_class.OBJECT_NAME
+        # .OBJECT_NAME will not exist on the base type itself
+        object_name: str = getattr(cls.stripe_class, "OBJECT_NAME", "")
+        if not object_name:
+            return False
+        return data and data.get("object") == object_name
 
     def _attach_objects_hook(
         self, cls, data, api_key=djstripe_settings.STRIPE_SECRET_KEY, current_ids=None
@@ -625,7 +638,6 @@ class StripeModel(StripeBaseModel):
 
         return instance
 
-    # flake8: noqa (C901)
     @classmethod
     def _get_or_create_from_stripe_object(
         cls,
@@ -666,14 +678,9 @@ class StripeModel(StripeBaseModel):
         if not field:
             # An empty field - We need to return nothing here because there is
             # no way of knowing what needs to be fetched!
-            logger.warning(
-                "empty field %s.%s = %r - this is a bug, "
-                "please report it to dj-stripe!",
-                cls.__name__,
-                field_name,
-                field,
+            raise RuntimeError(
+                f"dj-stripe encountered an empty field {cls.__name__}.{field_name} = {field}"
             )
-            return None, False
         elif id_ == field:
             # A field like {"subscription": "sub_6lsC8pt7IcFpjA", ...}
             # We'll have to expand if the field is not "id" (= is nested)
@@ -718,9 +725,8 @@ class StripeModel(StripeBaseModel):
         # *and* we didn't refetch by id, then `should_expand` is True and we
         # don't have the data to actually create the object.
         # If this happens when syncing Stripe data, it's a djstripe bug. Report it!
-        assert not should_expand, "No data to create {} from {}".format(
-            cls.__name__, field_name
-        )
+        if should_expand:
+            raise ValueError(f"No data to create {cls.__name__} from {field_name}")
 
         try:
             # We wrap the `_create_from_stripe_object` in a transaction to
@@ -958,13 +964,14 @@ class StripeModel(StripeBaseModel):
         :type charge: djstripe.models.Refund
         :return:
         """
+        stripe_refunds = convert_to_stripe_object(data.get("refunds"))
 
-        refunds = data.get("refunds")
-        if not refunds:
+        if not stripe_refunds:
             return []
 
         refund_objs = []
-        for refund_data in refunds.auto_paging_iter():
+
+        for refund_data in stripe_refunds.auto_paging_iter():
             item, _ = target_cls._get_or_create_from_stripe_object(
                 refund_data,
                 refetch=False,
@@ -1002,7 +1009,9 @@ class StripeModel(StripeBaseModel):
         )
 
         if not created:
-            record_data = cls._stripe_object_to_record(data, api_key=api_key)
+            record_data = cls._stripe_object_to_record(
+                data, api_key=api_key, stripe_account=stripe_account
+            )
             for attr, value in record_data.items():
                 setattr(instance, attr, value)
             instance._attach_objects_hook(
